@@ -1,42 +1,34 @@
 <script setup>
-import { RouterView, RouterLink, useRouter } from 'vue-router'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { supabase } from './supabase'
 
 const router = useRouter()
-const isLoggedIn = ref(false)
-const isAdmin = ref(false)
+const session = ref(null)
 
-// CITIM DIN ENV (Ascuns)
+// 1. Citim emailul de admin din .env
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL
 
+// 2. Calculam daca userul curent este Admin
+const isAdmin = computed(() => {
+  return session.value?.user?.email === ADMIN_EMAIL
+})
+
 onMounted(() => {
-  // Verificam la incarcarea paginii
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    isLoggedIn.value = !!session
-    if (session && session.user.email === ADMIN_EMAIL) {
-      isAdmin.value = true
-    }
+  supabase.auth.getSession().then(({ data }) => {
+    session.value = data.session
   })
 
-  // Verificam cand se logheaza/delogheaza
-  supabase.auth.onAuthStateChange((_, session) => {
-    isLoggedIn.value = !!session
-    if (session && session.user.email === ADMIN_EMAIL) {
-      isAdmin.value = true
-    } else {
-      isAdmin.value = false
-    }
+  supabase.auth.onAuthStateChange((_, _session) => {
+    session.value = _session
   })
 })
 
-async function handleLogout() {
+const handleLogout = async () => {
   await supabase.auth.signOut()
-  isAdmin.value = false
-  router.push('/')
+  router.push('/login')
 }
 </script>
-
 <template>
   <div class="app-wrapper">
     
@@ -48,7 +40,7 @@ async function handleLogout() {
           <RouterLink to="/booking" class="nav-link">📅 Book Now</RouterLink>
 
           <template v-if="isLoggedIn">
-            <RouterLink to="/admin" class="nav-link admin-link">Admin</RouterLink>
+            <RouterLink v-if="isAdmin" to="/admin" class="nav-link admin-link">Admin</RouterLink>
             <button @click="handleLogout" class="logout-btn">Logout</button>
           </template>
 

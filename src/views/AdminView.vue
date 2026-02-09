@@ -1,162 +1,249 @@
-<script setup>
-import { ref, onMounted } from 'vue'
-import { supabase } from '../supabase'
-
-const schedule = ref([])
-const loading = ref(true)
-const feedback = ref('')
-
-// Generam urmatoarele 14 zile
-function getNextDays(days = 14) {
-  const list = []
-  const today = new Date()
-  
-  for (let i = 0; i < days; i++) {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
-    // Format YYYY-MM-DD pentru baza de date
-    const dateStr = d.toISOString().split('T')[0]
-    
-    list.push({
-      date: dateStr,
-      displayDate: d.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' }),
-      is_working: true,
-      start_time: '09:00',
-      end_time: '17:00',
-      existsInDb: false // Sa stim daca dam INSERT sau UPDATE
-    })
-  }
-  return list
-}
-
-// Incarcam orarul existent din baza de date
-async function loadSchedule() {
-  loading.value = true
-  const days = getNextDays()
-  
-  // Luam datele salvate deja
-  const { data, error } = await supabase
-    .from('work_schedule')
-    .select('*')
-    .in('date', days.map(d => d.date))
-
-  if (error) console.error(error)
-
-  // Combinam zilele generate cu cele din DB
-  if (data) {
-    days.forEach(day => {
-      const saved = data.find(item => item.date === day.date)
-      if (saved) {
-        day.is_working = saved.is_working
-        day.start_time = saved.start_time.slice(0, 5) // Taiem secundele
-        day.end_time = saved.end_time.slice(0, 5)
-        day.existsInDb = true
-        day.id = saved.id
-      }
-    })
-  }
-  
-  schedule.value = days
-  loading.value = false
-}
-
-// Salvam o zi specifica
-async function saveDay(day) {
-  const payload = {
-    date: day.date,
-    is_working: day.is_working,
-    start_time: day.start_time,
-    end_time: day.end_time
-  }
-
-  let error = null
-
-  if (day.existsInDb) {
-    // UPDATE
-    const res = await supabase
-      .from('work_schedule')
-      .update(payload)
-      .eq('date', day.date)
-    error = res.error
-  } else {
-    // INSERT (Prima data cand modificam ziua)
-    const res = await supabase
-      .from('work_schedule')
-      .insert([payload])
-    // Marcam ca salvat ca sa stim pe viitor
-    if (!res.error) day.existsInDb = true
-    error = res.error
-  }
-
-  if (error) {
-    alert('Eroare la salvare!')
-    console.error(error)
-  } else {
-    feedback.value = `Salvat: ${day.displayDate}`
-    setTimeout(() => feedback.value = '', 2000)
-  }
-}
-
-onMounted(() => {
-  loadSchedule()
-})
-</script>
-
 <template>
   <div class="admin-container">
-    <h1>⚙️ Admin Panel - Orar</h1>
-    <p>Setează programul pentru următoarele 2 săptămâni.</p>
+    <h1>Panou Administrare</h1>
+    <p>Bine ai venit, David!</p>
 
-    <div v-if="feedback" class="feedback-msg">{{ feedback }}</div>
+    <div class="appointments-section">
+      <h2>📅 Programări Confirmate</h2>
+      
+      <div v-if="loading" class="loading">Se încarcă programările...</div>
+      
+      <div v-else-if="appointments.length === 0" class="no-data">
+        Nu există programări viitoare.
+      </div>
 
-    <div v-if="loading">Se încarcă orarul...</div>
+      <table v-else class="appointments-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Ora</th>
+            <th>Client</th>
+            <th>Serviciu</th>
+            <th>Telefon</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="app in appointments" :key="app.id">
+            <td>{{ formatDate(app.date) }}</td>
+            <td>{{ app.time }}</td>
+            <td>{{ app.client_name }}</td>
+            <td>{{ app.service_name }}</td>
+            <td>{{ app.client_phone || '-' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-    <div v-else class="schedule-grid">
-      <div v-for="day in schedule" :key="day.date" class="day-card" :class="{ 'day-off': !day.is_working }">
-        <div class="day-header">
-          <h3>{{ day.displayDate }}</h3>
-          <label class="toggle">
-            <input type="checkbox" v-model="day.is_working" @change="saveDay(day)">
-            <span class="slider"></span>
-            {{ day.is_working ? 'Deschis' : 'Închis' }}
+    <hr class="divider">
+
+    <div class="schedule-section">
+      <h2>⚙️ Configurare Orar & Zile Libere</h2>
+      <p class="hint">Debifează o zi pentru a o seta ca "ÎNCHIS" sau modifică orele.</p>
+      
+      <div class="schedule-grid">
+        <div v-for="day in days" :key="day.date" class="day-card" :class="{ 'closed': !day.is_open }">
+          <div class="day-header">
+            <span class="day-name">{{ getDayName(day.date) }}</span>
+            <span class="day-date">{{ formatDate(day.date) }}</span>
+          </div>
+
+          <label class="toggle-open">
+            <input type="checkbox" v-model="day.is_open">
+            <span v-if="day.is_open">Deschis ✅</span>
+            <span v-else>Închis ❌</span>
           </label>
-        </div>
 
-        <div v-if="day.is_working" class="time-inputs">
-          <label>
-            Start:
-            <input type="time" v-model="day.start_time" @change="saveDay(day)">
-          </label>
-          <label>
-            End:
-            <input type="time" v-model="day.end_time" @change="saveDay(day)">
-          </label>
+          <div v-if="day.is_open" class="time-inputs">
+            <div class="input-group">
+              <label>Start</label>
+              <input type="time" v-model="day.start_time">
+            </div>
+            <div class="input-group">
+              <label>Stop</label>
+              <input type="time" v-model="day.end_time">
+            </div>
+          </div>
+
+          <button @click="saveDay(day)" class="save-btn">Salvează Modificare</button>
         </div>
       </div>
     </div>
   </div>
 </template>
 
+<script setup>
+import { ref, onMounted } from 'vue'
+import { supabase } from '../supabase'
+
+// --- LOGICA PENTRU PROGRAMĂRI ---
+const appointments = ref([])
+const loading = ref(true)
+
+const fetchAppointments = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .gte('date', new Date().toISOString().split('T')[0]) // Doar programari viitoare sau de azi
+      .order('date', { ascending: true })
+      .order('time', { ascending: true })
+
+    if (error) throw error
+    appointments.value = data
+  } catch (e) {
+    console.error('Eroare la încărcarea programărilor:', e)
+    alert('Nu am putut încărca programările.')
+  } finally {
+    loading.value = false
+  }
+}
+
+// --- LOGICA PENTRU ORAR (Cea veche) ---
+const days = ref([])
+
+const getNextDays = () => {
+  const list = []
+  const today = new Date()
+  
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i)
+    const dateStr = d.toISOString().split('T')[0]
+    
+    list.push({
+      date: dateStr,
+      is_open: true, // Default
+      start_time: '09:00',
+      end_time: '18:00'
+    })
+  }
+  return list
+}
+
+const loadScheduleOverrides = async () => {
+  const { data } = await supabase.from('schedule_overrides').select('*')
+  if (data) {
+    data.forEach(override => {
+      const day = days.value.find(d => d.date === override.date)
+      if (day) {
+        day.is_open = override.is_open
+        day.start_time = override.start_time
+        day.end_time = override.end_time
+      }
+    })
+  }
+}
+
+const saveDay = async (day) => {
+  const { error } = await supabase
+    .from('schedule_overrides')
+    .upsert({ 
+      date: day.date, 
+      is_open: day.is_open, 
+      start_time: day.start_time, 
+      end_time: day.end_time 
+    }, { onConflict: 'date' })
+
+  if (error) alert('Eroare la salvare!')
+  else alert(`Orar salvat pentru ${day.date}`)
+}
+
+// Utilitare
+const formatDate = (dateStr) => {
+  return new Date(dateStr).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long' })
+}
+
+const getDayName = (dateStr) => {
+  return new Date(dateStr).toLocaleDateString('ro-RO', { weekday: 'long' })
+}
+
+onMounted(async () => {
+  days.value = getNextDays()
+  await loadScheduleOverrides() // Incarca orarul
+  await fetchAppointments()     // Incarca programarile
+})
+</script>
+
 <style scoped>
-.admin-container { max-width: 800px; margin: 40px auto; padding: 20px; }
-.feedback-msg { background: #d4edda; color: #155724; padding: 10px; margin-bottom: 20px; border-radius: 5px; text-align: center; }
+.admin-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #fff;
+  color: #333;
+}
 
-.schedule-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+h1, h2 { text-align: center; color: #2c3e50; }
+.divider { margin: 40px 0; border: 1px solid #eee; }
 
-.day-card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: all 0.3s; }
-.day-card.day-off { background: #f8f9fa; border-color: #eee; opacity: 0.7; }
-.day-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; text-transform: capitalize; }
-.day-header h3 { margin: 0; font-size: 1.1rem; }
+/* Tabel Programari */
+.appointments-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
 
-.time-inputs { display: flex; gap: 15px; }
-.time-inputs label { display: flex; flex-direction: column; font-size: 0.8rem; font-weight: bold; color: #666; }
-.time-inputs input { margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; }
+.appointments-table th, .appointments-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
 
-/* Toggle Switch CSS */
-.toggle { position: relative; display: inline-block; width: 90px; height: 24px; }
-.toggle input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
-.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
-input:checked + .slider { background-color: #2196F3; }
-input:checked + .slider:before { transform: translateX(66px); } /* Misca bila */
+.appointments-table th {
+  background-color: #f4f4f4;
+  font-weight: bold;
+}
+
+.no-data { text-align: center; color: #888; padding: 20px; }
+
+/* Grid Orar */
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.day-card {
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 8px;
+  background: #f9f9f9;
+}
+
+.day-card.closed {
+  background: #ffecec;
+  border-color: #ffcccc;
+}
+
+.day-header {
+  font-weight: bold;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.toggle-open {
+  display: block;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.input-group {
+  margin-bottom: 5px;
+}
+
+.save-btn {
+  width: 100%;
+  padding: 8px;
+  background: #333;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.save-btn:hover { background: #555; }
 </style>

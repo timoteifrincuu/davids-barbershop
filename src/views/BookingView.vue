@@ -210,4 +210,15 @@ async function confirmBooking() {
 
 .confirm-btn { background: #28a745; color: white; border: none; padding: 15px 30px; font-size: 1.1rem; border-radius: 50px; cursor: pointer; width: 100%; font-weight: bold; }
 .back-btn { background: none; border: none; color: #666; cursor: pointer; margin-bottom: 15px; text-decoration: underline; }
+
+/* Reparatie text alb */
+.vc-container, .vc-pane, .vc-header, .vc-day {
+  color: #1a1a1a !important; /* Text negru fortat */
+}
+
+/* Asigura-te ca sloturile orare sunt vizibile */
+.time-slot {
+  color: #000000;
+  border: 1px solid #ccc;
+}
 </style>
