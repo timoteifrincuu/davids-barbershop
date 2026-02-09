@@ -5,19 +5,34 @@ import { supabase } from './supabase'
 
 const router = useRouter()
 const isLoggedIn = ref(false)
+const isAdmin = ref(false)
+
+// CITIM DIN ENV (Ascuns)
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL
 
 onMounted(() => {
+  // Verificam la incarcarea paginii
   supabase.auth.getSession().then(({ data: { session } }) => {
     isLoggedIn.value = !!session
+    if (session && session.user.email === ADMIN_EMAIL) {
+      isAdmin.value = true
+    }
   })
 
+  // Verificam cand se logheaza/delogheaza
   supabase.auth.onAuthStateChange((_, session) => {
     isLoggedIn.value = !!session
+    if (session && session.user.email === ADMIN_EMAIL) {
+      isAdmin.value = true
+    } else {
+      isAdmin.value = false
+    }
   })
 })
 
 async function handleLogout() {
   await supabase.auth.signOut()
+  isAdmin.value = false
   router.push('/')
 }
 </script>

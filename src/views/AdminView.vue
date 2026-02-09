@@ -2,135 +2,161 @@
 import { ref, onMounted } from 'vue'
 import { supabase } from '../supabase'
 
-const appointments = ref([])
+const schedule = ref([])
 const loading = ref(true)
+const feedback = ref('')
 
-// 1. Functia care aduce programarile din baza de date
-async function fetchAppointments() {
-  loading.value = true
+// Generam urmatoarele 14 zile
+function getNextDays(days = 14) {
+  const list = []
+  const today = new Date()
   
-  // Luam tot din tabelul 'appointments' si le ordonam dupa data
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('*')
-    .order('date', { ascending: true }) // Cele mai apropiate primele
-
-  if (error) {
-    console.error('Eroare:', error)
-  } else {
-    appointments.value = data
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i)
+    // Format YYYY-MM-DD pentru baza de date
+    const dateStr = d.toISOString().split('T')[0]
+    
+    list.push({
+      date: dateStr,
+      displayDate: d.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' }),
+      is_working: true,
+      start_time: '09:00',
+      end_time: '17:00',
+      existsInDb: false // Sa stim daca dam INSERT sau UPDATE
+    })
   }
+  return list
+}
+
+// Incarcam orarul existent din baza de date
+async function loadSchedule() {
+  loading.value = true
+  const days = getNextDays()
+  
+  // Luam datele salvate deja
+  const { data, error } = await supabase
+    .from('work_schedule')
+    .select('*')
+    .in('date', days.map(d => d.date))
+
+  if (error) console.error(error)
+
+  // Combinam zilele generate cu cele din DB
+  if (data) {
+    days.forEach(day => {
+      const saved = data.find(item => item.date === day.date)
+      if (saved) {
+        day.is_working = saved.is_working
+        day.start_time = saved.start_time.slice(0, 5) // Taiem secundele
+        day.end_time = saved.end_time.slice(0, 5)
+        day.existsInDb = true
+        day.id = saved.id
+      }
+    })
+  }
+  
+  schedule.value = days
   loading.value = false
 }
 
-// 2. Functia de stergere (Anulare)
-async function deleteAppointment(id) {
-if (!confirm('Are you sure you want to delete this appointment?')) return
+// Salvam o zi specifica
+async function saveDay(day) {
+  const payload = {
+    date: day.date,
+    is_working: day.is_working,
+    start_time: day.start_time,
+    end_time: day.end_time
+  }
 
-  const { error } = await supabase
-    .from('appointments')
-    .delete()
-    .eq('id', id)
+  let error = null
+
+  if (day.existsInDb) {
+    // UPDATE
+    const res = await supabase
+      .from('work_schedule')
+      .update(payload)
+      .eq('date', day.date)
+    error = res.error
+  } else {
+    // INSERT (Prima data cand modificam ziua)
+    const res = await supabase
+      .from('work_schedule')
+      .insert([payload])
+    // Marcam ca salvat ca sa stim pe viitor
+    if (!res.error) day.existsInDb = true
+    error = res.error
+  }
 
   if (error) {
-    alert('Eroare la ștergere!')
+    alert('Eroare la salvare!')
+    console.error(error)
   } else {
-    // Daca s-a sters cu succes, reincarcam lista ca sa dispara de pe ecran
-    fetchAppointments() 
+    feedback.value = `Salvat: ${day.displayDate}`
+    setTimeout(() => feedback.value = '', 2000)
   }
 }
 
-// Cand intram pe pagina, incarcam datele
 onMounted(() => {
-  fetchAppointments()
+  loadSchedule()
 })
 </script>
 
 <template>
   <div class="admin-container">
-    <h1>👨‍✈️ Panou Administrare</h1>
-    
-    <div v-if="loading" class="loading">Se încarcă programările...</div>
-    
-    <div v-else-if="appointments.length === 0" class="empty-state">
-      Nu există programări momentan.
-    </div>
+    <h1>⚙️ Admin Panel - Orar</h1>
+    <p>Setează programul pentru următoarele 2 săptămâni.</p>
 
-    <div v-else class="appointments-list">
-      <div v-for="app in appointments" :key="app.id" class="app-card">
-        
-        <div class="app-info">
-          <div class="app-date">
-            📅 {{ app.date }} <br> 
-            ⏰ {{ app.time }}
-          </div>
-          
-          <div class="app-details">
-            <h3>{{ app.client_name || 'Anonymous Client' }}</h3>
-            <p>📞 {{ app.client_phone || 'No phone' }}</p>
-            <p class="service-tag">✂️ {{ app.service_name }} ({{ app.price }} RON)</p>
-          </div>
+    <div v-if="feedback" class="feedback-msg">{{ feedback }}</div>
+
+    <div v-if="loading">Se încarcă orarul...</div>
+
+    <div v-else class="schedule-grid">
+      <div v-for="day in schedule" :key="day.date" class="day-card" :class="{ 'day-off': !day.is_working }">
+        <div class="day-header">
+          <h3>{{ day.displayDate }}</h3>
+          <label class="toggle">
+            <input type="checkbox" v-model="day.is_working" @change="saveDay(day)">
+            <span class="slider"></span>
+            {{ day.is_working ? 'Deschis' : 'Închis' }}
+          </label>
         </div>
 
-        <button @click="deleteAppointment(app.id)" class="delete-btn">
-          🗑️ Delete
-        </button>
-
+        <div v-if="day.is_working" class="time-inputs">
+          <label>
+            Start:
+            <input type="time" v-model="day.start_time" @change="saveDay(day)">
+          </label>
+          <label>
+            End:
+            <input type="time" v-model="day.end_time" @change="saveDay(day)">
+          </label>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.admin-container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: Arial, sans-serif;
-}
+.admin-container { max-width: 800px; margin: 40px auto; padding: 20px; }
+.feedback-msg { background: #d4edda; color: #155724; padding: 10px; margin-bottom: 20px; border-radius: 5px; text-align: center; }
 
-h1 { text-align: center; margin-bottom: 30px; }
+.schedule-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 
-.app-card {
-  background: white;
-  border: 1px solid #eee;
-  border-left: 5px solid #d4af37; /* Linie aurie in stanga */
-  padding: 15px;
-  margin-bottom: 15px;
-  border-radius: 8px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-}
+.day-card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd; box-shadow: 0 2px 5px rgba(0,0,0,0.05); transition: all 0.3s; }
+.day-card.day-off { background: #f8f9fa; border-color: #eee; opacity: 0.7; }
+.day-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; text-transform: capitalize; }
+.day-header h3 { margin: 0; font-size: 1.1rem; }
 
-.app-info { display: flex; gap: 20px; align-items: center; }
+.time-inputs { display: flex; gap: 15px; }
+.time-inputs label { display: flex; flex-direction: column; font-size: 0.8rem; font-weight: bold; color: #666; }
+.time-inputs input { margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; }
 
-.app-date {
-  background: #f9f9f9;
-  padding: 10px;
-  border-radius: 6px;
-  text-align: center;
-  font-weight: bold;
-  min-width: 100px;
-}
-
-.app-details h3 { margin: 0 0 5px 0; font-size: 1.1rem; }
-.app-details p { margin: 0; color: #666; font-size: 0.9rem; }
-.service-tag { color: #d4af37; font-weight: bold; margin-top: 5px; }
-
-.delete-btn {
-  background: #ff4d4d;
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 5px;
-  cursor: pointer;
-}
-.delete-btn:hover { background: #cc0000; }
-
-@media (max-width: 600px) {
-  .app-card { flex-direction: column; align-items: flex-start; gap: 15px; }
-  .delete-btn { width: 100%; }
-}
+/* Toggle Switch CSS */
+.toggle { position: relative; display: inline-block; width: 90px; height: 24px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+input:checked + .slider { background-color: #2196F3; }
+input:checked + .slider:before { transform: translateX(66px); } /* Misca bila */
 </style>
