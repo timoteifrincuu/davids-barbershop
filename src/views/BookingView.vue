@@ -55,7 +55,21 @@ function generateDates() {
 }
 
 // --- SUPABASE ---
+// Inlocuieste onMounted existent cu acesta:
 onMounted(async () => {
+  // 1. Verificam daca e logat
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    // Daca nu e user, il trimitem la login (de siguranta)
+    router.push('/login')
+    return
+  }
+
+  // 2. Daca e logat, incercam sa-i pre-completam emailul (optional)
+  // Putem salva emailul in clientName temporar sau doar il tinem minte
+  // clientName.value = user.email (optional)
+
   await getServices()
   generateDates()
 })
