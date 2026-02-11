@@ -260,15 +260,29 @@ section { margin-bottom: 40px; }
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   gap: 10px;
 }
+
 .time-btn {
   padding: 10px;
   border: 1px solid #ddd;
   background: white;
   cursor: pointer;
   border-radius: 4px;
+  
+  /* FORTARE TEXT NEGRU */
+  color: #000000 !important; 
+  font-weight: bold;
 }
-.time-btn:hover { background: #eee; }
-.time-btn.selected { background: #333; color: white; border-color: #333; }
+
+.time-btn:hover {
+  background: #eee;
+}
+
+/* Cand e selectat devine negru cu text alb */
+.time-btn.selected {
+  background: #333;
+  color: white !important;
+  border-color: #333;
+}
 
 /* BUTON FINAL */
 .action-area { text-align: center; margin-top: 30px; }
