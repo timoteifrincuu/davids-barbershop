@@ -5,7 +5,7 @@
       <div class="success-card">
         <div class="icon-circle">✅</div>
         <h2>Rezervare Confirmată!</h2>
-        <p>Te așteptăm la data de <strong>{{ selectedDate }}</strong>, ora <strong>{{ selectedTime }}</strong>.</p>
+        <p>Te așteptăm <strong>{{ formatDateLong(selectedDate) }}</strong> la ora <strong>{{ selectedTime }}</strong>.</p>
         <p class="service-detail">{{ selectedService.name }} - {{ selectedService.price }} Lei</p>
         <button @click="resetBooking" class="btn-primary">Înapoi la meniu</button>
       </div>
@@ -34,16 +34,19 @@
       </section>
 
       <section v-if="selectedService" class="section-calendar fade-in">
-        <h3>2. Alege Data</h3>
-        <div class="input-wrapper">
-          <label>Selectează ziua dorită:</label>
-          <input 
-            type="date" 
-            v-model="selectedDate" 
-            :min="minDate"
-            @change="handleDateChange"
-            class="native-date-input"
-          />
+        <h3>2. Alege Ziua</h3>
+        
+        <div class="days-scroller">
+          <div 
+            v-for="day in nextDays" 
+            :key="day.fullDate"
+            class="day-card"
+            :class="{ 'selected': selectedDate === day.fullDate }"
+            @click="selectDate(day.fullDate)"
+          >
+            <span class="day-name">{{ day.name }}</span>
+            <span class="day-number">{{ day.number }}</span>
+          </div>
         </div>
       </section>
 
@@ -60,7 +63,7 @@
             {{ time }}
           </button>
         </div>
-        <p v-if="availableSlots.length === 0" class="no-slots">Selectează o dată pentru a vedea orele.</p>
+        <p v-if="availableSlots.length === 0" class="no-slots">Nu sunt locuri libere.</p>
       </section>
 
       <div class="action-area" v-if="selectedTime">
@@ -77,7 +80,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { supabase } from '../supabase'
 
 // --- DATE SERVICII ---
@@ -92,30 +95,44 @@ const selectedService = ref(null)
 const selectedDate = ref(null)
 const selectedTime = ref(null)
 const availableSlots = ref([])
+const nextDays = ref([]) // Lista celor 14 zile
 const loading = ref(false)
 const bookingSuccess = ref(false)
 
-// Data minimă (azi)
-const minDate = computed(() => {
+// --- GENERARE ZILE (Urmatoarele 14 zile) ---
+const generateNext14Days = () => {
+  const list = []
   const today = new Date()
-  return today.toISOString().split('T')[0]
-})
+  const daysMap = ['Dum', 'Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm']
+
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i)
+    
+    list.push({
+      fullDate: d.toISOString().split('T')[0], // format YYYY-MM-DD pentru baza de date
+      name: daysMap[d.getDay()], // Lun, Mar etc.
+      number: d.getDate() // 12, 13 etc.
+    })
+  }
+  nextDays.value = list
+}
 
 // --- LOGICĂ ---
+onMounted(() => {
+  generateNext14Days()
+})
 
 const selectService = (service) => {
   selectedService.value = service
-  // Reset la restul pentru a forța utilizatorul să aleagă din nou
   selectedDate.value = null
   selectedTime.value = null
-  availableSlots.value = []
 }
 
-// Cand se alege data din inputul nativ
-const handleDateChange = () => {
-  if (selectedDate.value) {
-    generateTimeSlots()
-  }
+const selectDate = (dateStr) => {
+  selectedDate.value = dateStr
+  selectedTime.value = null
+  generateTimeSlots()
 }
 
 const generateTimeSlots = () => {
@@ -126,6 +143,12 @@ const generateTimeSlots = () => {
     slots.push(`${i}:30`)
   }
   availableSlots.value = slots
+}
+
+const formatDateLong = (dateStr) => {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 const submitBooking = async () => {
@@ -175,14 +198,12 @@ const resetBooking = () => {
 .page-title { text-align: center; margin-bottom: 30px; }
 h3 { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; color: #555; }
 section { margin-bottom: 40px; }
-
-/* Animatie */
 .fade-in { animation: fadeIn 0.5s ease-in; }
 
-/* CARDURI */
+/* CARDURI SERVICII */
 .services-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 15px;
 }
 .service-card {
@@ -195,25 +216,43 @@ section { margin-bottom: 40px; }
   position: relative;
   text-align: center;
 }
-.service-card:hover { border-color: #333; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-.service-card.active { background-color: #f4f4f4; border: 2px solid #000; }
-.price { font-weight: bold; font-size: 1.2rem; color: #000; }
-.check-mark { position: absolute; top: 10px; right: 10px; color: green; font-weight: bold; }
+.service-card:hover { border-color: #333; }
+.service-card.active { background-color: #333; color: white; border-color: #333; }
+.service-card.active .price { color: white; } /* Pretul devine alb pe fundal negru */
 
-/* CALENDAR NATIV (Input) */
-.input-wrapper {
-  text-align: center;
+.price { font-weight: bold; font-size: 1.1rem; color: #000; margin-top: 5px;}
+.check-mark { position: absolute; top: 10px; right: 10px; color: #4CAF50; font-weight: bold; }
+
+/* ZILE (SCROLL ORIZONTAL) */
+.days-scroller {
+  display: flex;
+  overflow-x: auto;
+  gap: 10px;
+  padding-bottom: 10px;
+  scrollbar-width: thin; /* Pentru Firefox */
 }
-.native-date-input {
-  padding: 15px;
-  font-size: 18px;
-  border: 2px solid #333;
+/* Scrollbar custom dragut */
+.days-scroller::-webkit-scrollbar { height: 6px; }
+.days-scroller::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+.day-card {
+  min-width: 70px;
+  height: 80px;
+  border: 1px solid #ddd;
   border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  width: 100%;
-  max-width: 300px;
-  font-family: inherit;
+  background: white;
+  transition: all 0.2s;
 }
+.day-card:hover { border-color: #333; }
+.day-card.selected { background: #333; color: white; border-color: #333; }
+
+.day-name { font-size: 0.9rem; margin-bottom: 5px; text-transform: uppercase; }
+.day-number { font-size: 1.4rem; font-weight: bold; }
 
 /* ORE */
 .time-grid {
@@ -223,15 +262,15 @@ section { margin-bottom: 40px; }
 }
 .time-btn {
   padding: 10px;
-  border: 1px solid #999;
+  border: 1px solid #ddd;
   background: white;
   cursor: pointer;
   border-radius: 4px;
 }
 .time-btn:hover { background: #eee; }
-.time-btn.selected { background: #000; color: white; border-color: #000; }
+.time-btn.selected { background: #333; color: white; border-color: #333; }
 
-/* BUTON */
+/* BUTON FINAL */
 .action-area { text-align: center; margin-top: 30px; }
 .btn-submit {
   background: #28a745;
@@ -248,7 +287,7 @@ section { margin-bottom: 40px; }
 .success-screen { text-align: center; padding: 40px; }
 .success-card { border: 1px solid #ddd; padding: 30px; border-radius: 10px; display: inline-block; background: #fdfdfd; }
 .icon-circle { font-size: 50px; margin-bottom: 20px; }
-.btn-primary { background: #000; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+.btn-primary { background: #333; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
