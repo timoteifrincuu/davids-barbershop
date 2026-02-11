@@ -5,9 +5,8 @@
       <div class="success-card">
         <div class="icon-circle">✅</div>
         <h2>Rezervare Confirmată!</h2>
-        <p>Te așteptăm la data de <strong>{{ formatDate(selectedDate) }}</strong>, ora <strong>{{ selectedTime }}</strong>.</p>
-        <p class="service-detail">{{ selectedService.name }} - {{ selectedService.price }} RON</p>
-        
+        <p>Te așteptăm la data de <strong>{{ selectedDate }}</strong>, ora <strong>{{ selectedTime }}</strong>.</p>
+        <p class="service-detail">{{ selectedService.name }} - {{ selectedService.price }} Lei</p>
         <button @click="resetBooking" class="btn-primary">Înapoi la meniu</button>
       </div>
     </div>
@@ -36,14 +35,14 @@
 
       <section v-if="selectedService" class="section-calendar fade-in">
         <h3>2. Alege Data</h3>
-        <p class="hint">Serviciu selectat: <strong>{{ selectedService.name }}</strong></p>
-        
-        <div class="calendar-wrapper">
-          <VDatePicker 
+        <div class="input-wrapper">
+          <label>Selectează ziua dorită:</label>
+          <input 
+            type="date" 
             v-model="selectedDate" 
-            mode="date" 
-            :min-date="new Date()"
-            class="custom-calendar"
+            :min="minDate"
+            @change="handleDateChange"
+            class="native-date-input"
           />
         </div>
       </section>
@@ -61,7 +60,7 @@
             {{ time }}
           </button>
         </div>
-        <p v-if="availableSlots.length === 0" class="no-slots">Nu sunt locuri libere în această zi.</p>
+        <p v-if="availableSlots.length === 0" class="no-slots">Selectează o dată pentru a vedea orele.</p>
       </section>
 
       <div class="action-area" v-if="selectedTime">
@@ -78,10 +77,10 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { supabase } from '../supabase'
 
-// --- 1. DATELE CORECTE (Actualizate) ---
+// --- DATE SERVICII ---
 const services = ref([
   { id: 1, name: 'Tuns', price: 50 },
   { id: 2, name: 'Tuns + Barbă', price: 60 },
@@ -96,39 +95,37 @@ const availableSlots = ref([])
 const loading = ref(false)
 const bookingSuccess = ref(false)
 
-// --- LOGICĂ ---
-
-// Când dai click pe un card
-const selectService = (service) => {
-  console.log('Serviciu ales:', service.name) // Debug
-  selectedService.value = service
-  
-  // Dacă schimbă serviciul, resetăm data și ora ca să nu rămână vechi
-  selectedDate.value = null
-  selectedTime.value = null
-}
-
-// Când alege data, generăm orele
-watch(selectedDate, (newDate) => {
-  if (newDate) {
-    console.log('Data aleasa:', newDate) // Debug
-    generateTimeSlots()
-  }
+// Data minimă (azi)
+const minDate = computed(() => {
+  const today = new Date()
+  return today.toISOString().split('T')[0]
 })
 
-// Generare ore simple (10:00 - 18:00)
+// --- LOGICĂ ---
+
+const selectService = (service) => {
+  selectedService.value = service
+  // Reset la restul pentru a forța utilizatorul să aleagă din nou
+  selectedDate.value = null
+  selectedTime.value = null
+  availableSlots.value = []
+}
+
+// Cand se alege data din inputul nativ
+const handleDateChange = () => {
+  if (selectedDate.value) {
+    generateTimeSlots()
+  }
+}
+
 const generateTimeSlots = () => {
+  // Generam ore simple 10:00 - 18:00
   const slots = []
   for (let i = 10; i < 18; i++) {
     slots.push(`${i}:00`)
     slots.push(`${i}:30`)
   }
   availableSlots.value = slots
-}
-
-const formatDate = (d) => {
-  if (!d) return ''
-  return new Date(d).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 const submitBooking = async () => {
@@ -139,7 +136,6 @@ const submitBooking = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     
-    // Trimitem programarea
     const { error } = await supabase.from('appointments').insert({
       client_id: user?.id || null, 
       client_email: user?.email || 'guest@barber.com',
@@ -151,12 +147,10 @@ const submitBooking = async () => {
 
     if (error) throw error
 
-    // AFISAM CARDUL DE SUCCES
     bookingSuccess.value = true
 
   } catch (e) {
-    console.error(e)
-    alert('Eroare conexiune: ' + e.message)
+    alert('Eroare: ' + e.message)
   } finally {
     loading.value = false
   }
@@ -171,7 +165,6 @@ const resetBooking = () => {
 </script>
 
 <style scoped>
-/* Container Principal */
 .booking-container {
   max-width: 800px;
   margin: 0 auto;
@@ -179,36 +172,19 @@ const resetBooking = () => {
   font-family: 'Arial', sans-serif;
   color: #333;
 }
+.page-title { text-align: center; margin-bottom: 30px; }
+h3 { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px; color: #555; }
+section { margin-bottom: 40px; }
 
-h1.page-title {
-  text-align: center;
-  color: #111;
-  margin-bottom: 30px;
-}
+/* Animatie */
+.fade-in { animation: fadeIn 0.5s ease-in; }
 
-h3 {
-  border-bottom: 2px solid #eee;
-  padding-bottom: 10px;
-  margin-bottom: 20px;
-  color: #555;
-}
-
-section {
-  margin-bottom: 40px;
-}
-
-/* Animatie simpla de aparitie */
-.fade-in {
-  animation: fadeIn 0.5s ease-in;
-}
-
-/* CARDURI SERVICII */
+/* CARDURI */
 .services-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 15px;
 }
-
 .service-card {
   border: 1px solid #ccc;
   border-radius: 8px;
@@ -219,60 +195,24 @@ section {
   position: relative;
   text-align: center;
 }
+.service-card:hover { border-color: #333; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+.service-card.active { background-color: #f4f4f4; border: 2px solid #000; }
+.price { font-weight: bold; font-size: 1.2rem; color: #000; }
+.check-mark { position: absolute; top: 10px; right: 10px; color: green; font-weight: bold; }
 
-.service-card:hover {
-  border-color: #333;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-}
-
-/* Stil cand e selectat */
-.service-card.active {
-  background-color: #f4f4f4;
-  border: 2px solid #000;
-}
-
-.card-content h4 {
-  margin: 0 0 10px 0;
-  font-size: 1.1rem;
-}
-
-.price {
-  font-weight: bold;
-  font-size: 1.2rem;
-  color: #000;
-}
-
-.check-mark {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  color: green;
-  font-weight: bold;
-}
-
-/* CALENDAR FIX */
-.calendar-wrapper {
-  display: flex;
-  justify-content: center;
-  margin-top: 15px;
-}
-.hint {
+/* CALENDAR NATIV (Input) */
+.input-wrapper {
   text-align: center;
-  color: #666;
-  margin-bottom: 10px;
 }
-
-/* Fortam culori vizibile la calendar */
-:deep(.vc-container) {
-  border: 1px solid #999;
-  --vc-color: #000; 
-}
-:deep(.vc-day-content) {
-  color: #000 !important; /* Text NEGRU */
-}
-:deep(.vc-day-content.vc-highlight-content-solid) {
-  background-color: #000 !important;
-  color: #fff !important;
+.native-date-input {
+  padding: 15px;
+  font-size: 18px;
+  border: 2px solid #333;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 300px;
+  font-family: inherit;
 }
 
 /* ORE */
@@ -281,7 +221,6 @@ section {
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   gap: 10px;
 }
-
 .time-btn {
   padding: 10px;
   border: 1px solid #999;
@@ -289,23 +228,11 @@ section {
   cursor: pointer;
   border-radius: 4px;
 }
+.time-btn:hover { background: #eee; }
+.time-btn.selected { background: #000; color: white; border-color: #000; }
 
-.time-btn:hover {
-  background: #eee;
-}
-
-.time-btn.selected {
-  background: #000;
-  color: white;
-  border-color: #000;
-}
-
-/* BUTON FINAL */
-.action-area {
-  text-align: center;
-  margin-top: 30px;
-}
-
+/* BUTON */
+.action-area { text-align: center; margin-top: 30px; }
 .btn-submit {
   background: #28a745;
   color: white;
@@ -317,40 +244,11 @@ section {
   font-weight: bold;
 }
 
-.btn-submit:hover {
-  background: #218838;
-}
-
-/* ECRAN SUCCES */
-.success-screen {
-  text-align: center;
-  padding: 40px;
-}
-.success-card {
-  border: 1px solid #ddd;
-  padding: 30px;
-  border-radius: 10px;
-  display: inline-block;
-  background: #fdfdfd;
-}
-.icon-circle {
-  font-size: 50px;
-  margin-bottom: 20px;
-}
-.service-detail {
-  background: #eee;
-  padding: 10px;
-  margin: 15px 0;
-  border-radius: 5px;
-}
-.btn-primary {
-  background: #000;
-  color: #fff;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 5px;
-  cursor: pointer;
-}
+/* SUCCES */
+.success-screen { text-align: center; padding: 40px; }
+.success-card { border: 1px solid #ddd; padding: 30px; border-radius: 10px; display: inline-block; background: #fdfdfd; }
+.icon-circle { font-size: 50px; margin-bottom: 20px; }
+.btn-primary { background: #000; color: #fff; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
